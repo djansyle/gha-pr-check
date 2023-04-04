@@ -1,0 +1,53 @@
+name: Check PR and Run Checks
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  check-pr-and-run-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      - name: Check if last commit is a PR
+        id: check-pr
+        run: |
+          if [[ $(git log --format=%B -n 1 HEAD) =~ ^Merge\ pull\ request\ \#([0-9]+) ]]; then
+            export PR_NUMBER=${BASH_REMATCH[1]}
+            echo "Last commit is a PR (#${PR_NUMBER})"
+            echo "::set-output name=is-pr::true"
+            echo "::set-output name=pr-number::${PR_NUMBER}"
+          else
+            echo "Last commit is not a PR"
+            echo "::set-output name=is-pr::false"
+            exit 1
+          fi
+      
+      - name: Check if PR is based on qa branch
+        id: check-qa-branch
+        if: ${{ steps.check-pr.outputs.is-pr == 'true' }}
+        run: |
+          PR_BASE_BRANCH=$(curl --silent -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ steps.check-pr.outputs.pr-number }}" | jq -r '.base.ref')
+          if [[ "$PR_BASE_BRANCH" == "qa" ]]; then
+            echo "PR is based on qa branch"
+            echo "::set-output name=is-qa-pr::true"
+          else
+            echo "PR is not based on qa branch"
+            echo "::set-output name=is-qa-pr::false"
+            exit 1
+          fi
+      
+      - name: Wait for PR checks to complete
+        id: wait-for-pr-checks
+        if: ${{ steps.check-pr.outputs.is-pr == 'true' && steps.check-qa-branch.outputs.is-qa-pr == 'true' }}
+        uses: thollander/actions-wait-for-checks@v1.0.0
+        with:
+          checks: all
+          ref: "refs/pull/${{ steps.check-pr.outputs.pr-number }}/head"
+      
+      - name: Run checks
+        if: ${{ steps.check-pr.outputs.is-pr == 'true' && steps.check-qa-branch.outputs.is-qa-pr == 'true' && success() }}
+        run: echo "Checks passed!"
