@@ -1,0 +1,13 @@
+name: qa
+on:
+  push:
+  pull_request:
+    branches:
+      - "qa"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Always Pass
+        run: echo "This check always passes"
